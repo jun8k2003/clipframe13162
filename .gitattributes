@@ -1,0 +1,28 @@
+# 改行コードの統一設定
+# リポジトリ内部は常に LF で保存し、チェックアウト時は各環境の設定に従う。
+# これによりWindows(CRLF)とLinux/Mac(LF)の混在環境でも差分が発生しない。
+* text=auto
+
+# テキストとして明示するファイル(意図しないバイナリ判定の防止)
+*.ts    text
+*.js    text
+*.mjs   text
+*.map   text
+*.css   text
+*.html  text
+*.json  text
+*.md    text
+*.svg   text
+*.yaml  text
+*.yml   text
+
+# バイナリファイル(改行変換を行わない)
+*.png   binary
+*.ico   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.jar   binary
+*.tgz   binary
+*.woff  binary
+*.woff2 binary
