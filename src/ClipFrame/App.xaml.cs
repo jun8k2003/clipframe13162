@@ -12,25 +12,40 @@ public partial class App : Application
     private CaptureEngine? _capture;
     private FrameOverlayWindow? _overlay;
     private MirrorWindow? _mirror;
+    private bool _sessionStateSaved;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
+        var settings = new SettingsStore();
+
         // Initial region: a 1280x720 rectangle placed near the top-left of the
-        // primary monitor's work area (physical pixels).
+        // primary monitor's work area (physical pixels). If the monitor layout
+        // (screen count + geometry) is unchanged since the last exit, restore
+        // the region/mirror rects the user left off with instead.
         var wa = Native.NativeMethods.GetPrimaryWorkArea();
         int w = Math.Min(1280, wa.Width - 200);
         int h = Math.Min(720, wa.Height - 200);
         var initial = new System.Drawing.Rectangle(wa.Left + 80, wa.Top + 80, w, h);
 
+        var currentLayout = Native.NativeMethods.GetAllMonitors();
+        System.Drawing.Rectangle? restoredMirrorRect = null;
+        if (SameLayout(settings.Current.LastMonitorLayout, currentLayout))
+        {
+            if (settings.Current.LastRegion is { } lr)
+                initial = new System.Drawing.Rectangle(lr.X, lr.Y, lr.Width, lr.Height);
+            if (settings.Current.LastMirrorWindow is { } lm)
+                restoredMirrorRect = new System.Drawing.Rectangle(lm.X, lm.Y, lm.Width, lm.Height);
+        }
+
         _region = new RegionManager(initial);
 
         _capture = new CaptureEngine();
 
-        var settings = new SettingsStore();
-
         _mirror = new MirrorWindow(_region, _capture);
+        if (restoredMirrorRect is { } rmr)
+            _mirror.RestoreWindowRect(rmr);
         _overlay = new FrameOverlayWindow(_region, _capture, _mirror, settings);
 
         // Show mirror first so it can auto-place itself outside the region.
@@ -44,6 +59,11 @@ public partial class App : Application
         _region.RegionCommitted += r => _capture!.UpdateRegion(r);
         _region.RegionChanging += () => _capture!.Freeze();
         _region.RegionCommitted += _ => _capture!.Unfreeze();
+
+        // Persist the session state (region + mirror rect + monitor layout) as
+        // soon as either window starts closing, while handles are still valid.
+        _overlay.Closing += (_, _) => SaveSessionState(settings);
+        _mirror.Closing += (_, _) => SaveSessionState(settings);
 
         _overlay.Closed += (_, _) => Shutdown();
         _mirror.Closed += (_, _) => Shutdown();
@@ -186,5 +206,42 @@ public partial class App : Application
     {
         _capture?.Dispose();
         base.OnExit(e);
+    }
+
+    /// <summary>True when both layouts have the same monitor count and geometry, in order.</summary>
+    private static bool SameLayout(List<RectInfo>? saved, List<System.Drawing.Rectangle> current)
+    {
+        if (saved == null || saved.Count != current.Count) return false;
+        for (int i = 0; i < saved.Count; i++)
+        {
+            var s = saved[i];
+            var c = current[i];
+            if (s.X != c.X || s.Y != c.Y || s.Width != c.Width || s.Height != c.Height)
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Captures the current region + mirror rect + monitor layout so the next
+    /// launch can restore them if the monitor layout hasn't changed. Called
+    /// from Closing (not OnExit) so window handles are still valid.
+    /// </summary>
+    private void SaveSessionState(SettingsStore settings)
+    {
+        if (_sessionStateSaved || _region == null) return;
+        _sessionStateSaved = true;
+
+        var r = _region.CurrentRegion;
+        settings.Current.LastRegion = new RectInfo(r.X, r.Y, r.Width, r.Height);
+
+        if (_mirror != null && _mirror.TryGetPhysicalRect(out var mr))
+            settings.Current.LastMirrorWindow = new RectInfo(mr.X, mr.Y, mr.Width, mr.Height);
+
+        settings.Current.LastMonitorLayout = Native.NativeMethods.GetAllMonitors()
+            .Select(m => new RectInfo(m.X, m.Y, m.Width, m.Height))
+            .ToList();
+
+        settings.Save();
     }
 }

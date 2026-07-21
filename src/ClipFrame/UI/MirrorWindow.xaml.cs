@@ -29,6 +29,8 @@ public partial class MirrorWindow : Window
     private int _bmpWidth;
     private int _bmpHeight;
 
+    private Rectangle? _pendingRestoreRect;
+
     public MirrorWindow(RegionManager region, CaptureEngine capture)
     {
         _region = region;
@@ -56,8 +58,40 @@ public partial class MirrorWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        AutoPlaceOutsideRegion(_region.CurrentRegion);
+        if (_pendingRestoreRect is { } r)
+        {
+            SetWindowPos(_hwnd, IntPtr.Zero, r.X, r.Y, r.Width, r.Height,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        else
+        {
+            AutoPlaceOutsideRegion(_region.CurrentRegion);
+        }
         UpdateOverlapWarning();
+    }
+
+    /// <summary>
+    /// Requests that the window be placed at <paramref name="rect"/> (physical
+    /// px) once loaded, instead of auto-placing outside the shared region.
+    /// Must be called before the window is shown.
+    /// </summary>
+    public void RestoreWindowRect(Rectangle rect) => _pendingRestoreRect = rect;
+
+    /// <summary>Reads the window's current rect (physical px). False if the window has no handle yet.</summary>
+    public bool TryGetPhysicalRect(out Rectangle rect)
+    {
+        if (_hwnd == IntPtr.Zero)
+        {
+            rect = default;
+            return false;
+        }
+        if (!GetWindowRect(_hwnd, out RECT wr))
+        {
+            rect = default;
+            return false;
+        }
+        rect = new Rectangle(wr.Left, wr.Top, wr.Width, wr.Height);
+        return true;
     }
 
     // ---- Frame pump (pull model) ----

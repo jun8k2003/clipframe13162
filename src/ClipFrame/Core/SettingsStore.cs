@@ -4,15 +4,34 @@ using System.Text.Json.Serialization;
 
 namespace ClipFrame.Core;
 
+/// <summary>A rectangle in physical screen pixels, for JSON persistence.</summary>
+public sealed record RectInfo(int X, int Y, int Width, int Height);
+
 /// <summary>Persisted user preferences (not tied to a specific region).</summary>
 public sealed class AppSettings
 {
     /// <summary>Show the "mirror overlaps the shared region" warning (spec §5).</summary>
     public bool ShowOverlapWarning { get; set; } = true;
+
+    /// <summary>
+    /// Monitor layout (each monitor's physical-px rect) captured at last exit.
+    /// On the next launch, <see cref="LastRegion"/>/<see cref="LastMirrorWindow"/>
+    /// are only restored if the current layout matches this one exactly (same
+    /// screen count and same geometry) — otherwise a changed monitor setup
+    /// could place windows off-screen.
+    /// </summary>
+    public List<RectInfo>? LastMonitorLayout { get; set; }
+
+    /// <summary>Shared region rectangle (physical px) at last exit.</summary>
+    public RectInfo? LastRegion { get; set; }
+
+    /// <summary>Mirror window rectangle (physical px) at last exit.</summary>
+    public RectInfo? LastMirrorWindow { get; set; }
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(AppSettings))]
+[JsonSerializable(typeof(List<RectInfo>))]
 internal partial class SettingsJsonContext : JsonSerializerContext
 {
 }

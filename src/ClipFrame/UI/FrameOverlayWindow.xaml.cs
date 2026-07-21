@@ -523,16 +523,20 @@ public partial class FrameOverlayWindow : Window
 
         foreach (var preset in list)
         {
-            var apply = new MenuItem { Header = $"{preset.Name}   ({preset.Width}×{preset.Height})" };
             var captured = preset;
+
+            // NOTE: a MenuItem that has child Items becomes a submenu header in
+            // WPF — clicking it opens the submenu instead of raising Click. So
+            // "apply" and "delete" must be separate, childless, sibling items
+            // (previously delete was nested under apply, which silently ate
+            // every click on the preset and made it look like only delete worked).
+            var apply = new MenuItem { Header = $"{preset.Name}   ({preset.Width}×{preset.Height})" };
             apply.Click += (_, _) => ApplyPreset(captured.Rect);
-
-            var delete = new MenuItem { Header = "削除" };
-            apply.Items.Add(delete);
-            var toDelete = preset;
-            delete.Click += (_, _) => _presets.Remove(toDelete);
-
             _loadPresetItem.Items.Add(apply);
+
+            var delete = new MenuItem { Header = "    削除" };
+            delete.Click += (_, _) => _presets.Remove(captured);
+            _loadPresetItem.Items.Add(delete);
         }
     }
 

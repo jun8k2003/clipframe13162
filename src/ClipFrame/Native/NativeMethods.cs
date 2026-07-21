@@ -212,4 +212,29 @@ internal static class NativeMethods
         }
         return (hmon, new Rectangle(0, 0, 1920, 1080));
     }
+
+    // ---- Monitor enumeration (layout fingerprint for session-state restore) ----
+
+    private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
+
+    /// <summary>
+    /// All monitor rects (physical px), in a stable left-then-top order so two
+    /// calls can be compared to detect whether the physical monitor
+    /// arrangement (count + geometry) has changed between app launches.
+    /// </summary>
+    public static List<Rectangle> GetAllMonitors()
+    {
+        var list = new List<Rectangle>();
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
+            (IntPtr _, IntPtr _, ref RECT rect, IntPtr _) =>
+            {
+                list.Add(new Rectangle(rect.Left, rect.Top, rect.Width, rect.Height));
+                return true;
+            }, IntPtr.Zero);
+        list.Sort((a, b) => a.X != b.X ? a.X.CompareTo(b.X) : a.Y.CompareTo(b.Y));
+        return list;
+    }
 }
