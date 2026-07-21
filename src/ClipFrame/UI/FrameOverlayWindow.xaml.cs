@@ -23,6 +23,8 @@ public partial class FrameOverlayWindow : Window
 
     private readonly RegionManager _region;
     private readonly CaptureEngine _capture;
+    private readonly MirrorWindow _mirror;
+    private readonly SettingsStore _settings;
 
     private IntPtr _hwnd;
     private double _scale = 1.0;
@@ -39,11 +41,17 @@ public partial class FrameOverlayWindow : Window
     private System.Windows.Point _gripStartScreen;
     private double _gripStartOffset;
 
-    public FrameOverlayWindow(RegionManager region, CaptureEngine capture)
+    public FrameOverlayWindow(RegionManager region, CaptureEngine capture,
+        MirrorWindow mirror, SettingsStore settings)
     {
         _region = region;
         _capture = capture;
+        _mirror = mirror;
+        _settings = settings;
         InitializeComponent();
+
+        // Apply the persisted overlap-warning preference to the mirror.
+        _mirror.ShowOverlapWarning = _settings.Current.ShowOverlapWarning;
 
         var r = region.CurrentRegion;
         _aspectRatio = r.Height > 0 ? (double)r.Width / r.Height : 16.0 / 9.0;
@@ -446,6 +454,20 @@ public partial class FrameOverlayWindow : Window
         };
         snap.Click += (_, _) => _snapEnabled = snap.IsChecked;
         menu.Items.Add(snap);
+
+        var overlapWarn = new MenuItem
+        {
+            Header = "ミラー重なり警告を表示",
+            IsCheckable = true,
+            IsChecked = _settings.Current.ShowOverlapWarning,
+        };
+        overlapWarn.Click += (_, _) =>
+        {
+            _mirror.ShowOverlapWarning = overlapWarn.IsChecked;
+            _settings.Current.ShowOverlapWarning = overlapWarn.IsChecked;
+            _settings.Save();
+        };
+        menu.Items.Add(overlapWarn);
 
         var fpsMenu = new MenuItem { Header = "フレームレート" };
         foreach (int fps in new[] { 10, 15, 20, 30 })

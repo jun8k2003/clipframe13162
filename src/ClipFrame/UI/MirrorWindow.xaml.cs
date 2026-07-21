@@ -12,8 +12,16 @@ namespace ClipFrame.UI;
 
 public partial class MirrorWindow : Window
 {
+    /// <summary>Custom caption height (DIP). Must match the XAML row/CaptionHeight.</summary>
+    private const double TitleBarDip = 30;
+
     private readonly RegionManager _region;
     private readonly CaptureEngine _capture;
+
+    private bool _showOverlapWarning = true;
+
+    private CoverWindow? _cover;
+    private bool _syncingRect;
 
     private IntPtr _hwnd;
     private WriteableBitmap? _bitmap;
@@ -32,8 +40,8 @@ public partial class MirrorWindow : Window
         _region.RegionCommitted += _ => Dispatcher.BeginInvoke(UpdatePausedIndicator);
 
         Loaded += OnLoaded;
-        LocationChanged += (_, _) => UpdateOverlapWarning();
-        SizeChanged += (_, _) => UpdateOverlapWarning();
+        LocationChanged += (_, _) => { UpdateOverlapWarning(); SyncCoverToMirror(); };
+        SizeChanged += (_, _) => { UpdateOverlapWarning(); SyncCoverToMirror(); };
         CompositionTarget.Rendering += OnRendering;
         Closed += (_, _) => CompositionTarget.Rendering -= OnRendering;
     }
@@ -120,7 +128,9 @@ public partial class MirrorWindow : Window
             {
                 double aspect = (double)region.Width / region.Height;
                 // Keep current width, adjust height to match the region aspect.
-                Height = Math.Max(MinHeight, Width / aspect);
+                // The caption row is part of the client area now, so add it on
+                // top of the video height to keep the image letterbox-free.
+                Height = Math.Max(MinHeight, TitleBarDip + Width / aspect);
             }
             UpdateOverlapWarning();
         });
@@ -128,9 +138,31 @@ public partial class MirrorWindow : Window
 
     // ---- Self-reflection warning ----
 
+    /// <summary>
+    /// When false, the "mirror overlaps the shared region" warning is never shown,
+    /// regardless of overlap state (spec §5). Persisted via <see cref="Core.SettingsStore"/>.
+    /// </summary>
+    public bool ShowOverlapWarning
+    {
+        get => _showOverlapWarning;
+        set
+        {
+            if (_showOverlapWarning == value) return;
+            _showOverlapWarning = value;
+            UpdateOverlapWarning();
+        }
+    }
+
     private void UpdateOverlapWarning()
     {
         if (_hwnd == IntPtr.Zero) return;
+
+        if (!_showOverlapWarning)
+        {
+            OverlapWarning.Visibility = Visibility.Collapsed;
+            return;
+        }
+
         GetWindowRect(_hwnd, out RECT wr);
         var mirror = new Rectangle(wr.Left, wr.Top, wr.Width, wr.Height);
         bool overlaps = mirror.IntersectsWith(_region.CurrentRegion);
@@ -140,6 +172,57 @@ public partial class MirrorWindow : Window
     private void UpdatePausedIndicator()
     {
         // Placeholder hook for pause state visualization; wired via capture freeze.
+    }
+
+    // ---- Cover window: hides the mirror so it may safely overlap the region ----
+
+    private void OnShowCoverClick(object sender, RoutedEventArgs e) => ShowCover();
+
+    private void ShowCover()
+    {
+        if (_cover == null)
+        {
+            // Owned window → the OS keeps the cover above the mirror; it also
+            // closes automatically when the mirror closes.
+            _cover = new CoverWindow { Owner = this };
+            _cover.LocationChanged += (_, _) => SyncMirrorToCover();
+            _cover.SizeChanged += (_, _) => SyncMirrorToCover();
+            _cover.HideRequested += () => _cover.Hide();
+        }
+
+        // Place exactly over the mirror before showing.
+        _syncingRect = true;
+        _cover.Left = Left;
+        _cover.Top = Top;
+        _cover.Width = Width;
+        _cover.Height = Height;
+        _syncingRect = false;
+
+        _cover.Show();
+    }
+
+    /// <summary>The cover is the drag/resize handle while the mirror is buried.</summary>
+    private void SyncMirrorToCover()
+    {
+        if (_cover == null || _syncingRect) return;
+        _syncingRect = true;
+        Left = _cover.Left;
+        Top = _cover.Top;
+        Width = _cover.Width;
+        Height = _cover.Height;
+        _syncingRect = false;
+    }
+
+    /// <summary>Keeps the cover glued to the mirror (e.g. aspect-follow resize).</summary>
+    private void SyncCoverToMirror()
+    {
+        if (_cover == null || !_cover.IsVisible || _syncingRect) return;
+        _syncingRect = true;
+        _cover.Left = Left;
+        _cover.Top = Top;
+        _cover.Width = Width;
+        _cover.Height = Height;
+        _syncingRect = false;
     }
 
     // ---- Minimize guard (spec §5): dodge to a corner instead of minimizing ----
@@ -155,9 +238,22 @@ public partial class MirrorWindow : Window
                 handled = true;
                 return IntPtr.Zero;
             }
+            // Block maximize (incl. caption double-click): a full-screen mirror
+            // is never useful and would desync the paired cover window.
+            if (cmd == SC_MAXIMIZE)
+            {
+                handled = true;
+                return IntPtr.Zero;
+            }
         }
         return IntPtr.Zero;
     }
+
+    // ---- Title-bar buttons ----
+
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
+
+    private void OnDodgeClick(object sender, RoutedEventArgs e) => DodgeToCorner();
 
     private void DodgeToCorner()
     {

@@ -28,8 +28,10 @@ public partial class App : Application
 
         _capture = new CaptureEngine();
 
+        var settings = new SettingsStore();
+
         _mirror = new MirrorWindow(_region, _capture);
-        _overlay = new FrameOverlayWindow(_region, _capture);
+        _overlay = new FrameOverlayWindow(_region, _capture, _mirror, settings);
 
         // Show mirror first so it can auto-place itself outside the region.
         _mirror.Show();

@@ -25,7 +25,8 @@ src/ClipFrame/
 ├─ app.manifest               PerMonitorV2 DPI、asInvoker
 ├─ Core/
 │  ├─ RegionManager.cs        共有領域(物理ピクセル)の単一の真実。変更/確定イベントを発行
-│  └─ PresetStore.cs          領域プリセットの JSON 永続化(%APPDATA%\ClipFrame\presets.json)
+│  ├─ PresetStore.cs          領域プリセットの JSON 永続化(%APPDATA%\ClipFrame\presets.json)
+│  └─ SettingsStore.cs        ユーザー設定の JSON 永続化(%APPDATA%\ClipFrame\settings.json)
 ├─ Capture/CaptureEngine.cs   WGC でモニタ全体をキャプチャ→領域をGPUクロップ→CPU読み出し
 ├─ Native/
 │  ├─ NativeMethods.cs        Win32 相互運用(affinity, region, hit-test, DPI, monitor …)
@@ -33,6 +34,7 @@ src/ClipFrame/
 └─ UI/
    ├─ FrameOverlayWindow      枠オーバーレイ(領域刳り抜き・タグ・リサイズ/移動・除外・プリセット)
    ├─ MirrorWindow            ミラーウィンドウ(WriteableBitmap 表示・最小化退避・自動配置)
+   ├─ CoverWindow             カバーウィンドウ(ミラー直上に同位置・同サイズで追従し映り込みを遮蔽)
    └─ InputDialog.cs          プリセット名入力用の簡易モーダル
 
 Assets/appicon.ico          アプリ/ミラーウィンドウ用アイコン

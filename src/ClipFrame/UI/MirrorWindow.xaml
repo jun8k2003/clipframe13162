@@ -7,27 +7,93 @@
         MinWidth="200" MinHeight="140"
         Background="Black"
         UseLayoutRounding="True">
+
+    <!-- Custom chrome: the caption row hosts our buttons so nothing overlays
+         the mirrored content (which is what viewers see in Teams). -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="30"
+                      ResizeBorderThickness="6"
+                      GlassFrameThickness="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <Style x:Key="ChromeButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#CCFFFFFF" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Grid>
-        <Image x:Name="MirrorImage"
-               Stretch="Uniform"
-               RenderOptions.BitmapScalingMode="LowQuality"
-               SnapsToDevicePixels="True" />
+        <Grid.RowDefinitions>
+            <RowDefinition Height="30" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <!-- Self-reflection warning (spec §5) -->
-        <Border x:Name="OverlapWarning"
-                Visibility="Collapsed"
-                VerticalAlignment="Top" HorizontalAlignment="Stretch"
-                Background="#CCB00020" Padding="10,6">
-            <TextBlock Foreground="White" FontSize="12" TextWrapping="Wrap"
-                       Text="⚠ ミラーウィンドウが共有領域に重なっています(合わせ鏡)。領域の外へ移動してください。" />
-        </Border>
+        <!-- Title bar (caption area) -->
+        <DockPanel Grid.Row="0" Background="#FF1E2226" LastChildFill="False">
+            <Image Source="pack://application:,,,/Assets/appicon.ico"
+                   Width="16" Height="16" Margin="8,0,6,0"
+                   VerticalAlignment="Center" DockPanel.Dock="Left" />
+            <TextBlock Text="ClipFrame View"
+                       Foreground="#CCFFFFFF" FontSize="12"
+                       VerticalAlignment="Center" DockPanel.Dock="Left" />
 
-        <!-- Shown while paused -->
-        <TextBlock x:Name="PausedLabel"
-                   Visibility="Collapsed"
-                   Text="⏸ 一時停止中"
-                   Foreground="#CCFFFFFF" FontSize="16"
-                   HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                   Margin="0,0,0,12" />
+            <Button Style="{StaticResource ChromeButton}" DockPanel.Dock="Right"
+                    Content="✕" FontSize="12" ToolTip="閉じる"
+                    Click="OnCloseClick" />
+            <Button Style="{StaticResource ChromeButton}" DockPanel.Dock="Right"
+                    Content="─" FontSize="12" ToolTip="隅に退避(最小化の代わり)"
+                    Click="OnDodgeClick" />
+            <Button Style="{StaticResource ChromeButton}" DockPanel.Dock="Right"
+                    Content="カバー表示" FontSize="12"
+                    ToolTip="ミラーを隠すカバーウィンドウを表示"
+                    Click="OnShowCoverClick" />
+        </DockPanel>
+
+        <!-- Mirrored content -->
+        <Grid Grid.Row="1">
+            <Image x:Name="MirrorImage"
+                   Stretch="Uniform"
+                   RenderOptions.BitmapScalingMode="LowQuality"
+                   SnapsToDevicePixels="True" />
+
+            <!-- Self-reflection warning (spec §5) -->
+            <Border x:Name="OverlapWarning"
+                    Visibility="Collapsed"
+                    VerticalAlignment="Top" HorizontalAlignment="Stretch"
+                    Background="#CCB00020" Padding="10,6">
+                <TextBlock Foreground="White" FontSize="12" TextWrapping="Wrap"
+                           Text="⚠ ミラーウィンドウが共有領域に重なっています(合わせ鏡)。領域の外へ移動してください。" />
+            </Border>
+
+            <!-- Shown while paused -->
+            <TextBlock x:Name="PausedLabel"
+                       Visibility="Collapsed"
+                       Text="⏸ 一時停止中"
+                       Foreground="#CCFFFFFF" FontSize="16"
+                       HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                       Margin="0,0,0,12" />
+        </Grid>
     </Grid>
 </Window>
