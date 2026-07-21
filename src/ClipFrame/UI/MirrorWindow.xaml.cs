@@ -41,7 +41,6 @@ public partial class MirrorWindow : Window
         _region.RegionChanging += () => Dispatcher.BeginInvoke(UpdatePausedIndicator);
         _region.RegionCommitted += _ => Dispatcher.BeginInvoke(UpdatePausedIndicator);
 
-        Loaded += OnLoaded;
         LocationChanged += (_, _) => { UpdateOverlapWarning(); SyncCoverToMirror(); };
         SizeChanged += (_, _) => { UpdateOverlapWarning(); SyncCoverToMirror(); };
         CompositionTarget.Rendering += OnRendering;
@@ -54,10 +53,11 @@ public partial class MirrorWindow : Window
         var src = (HwndSource)PresentationSource.FromVisual(this)!;
         _hwnd = src.Handle;
         src.AddHook(WndProc);
-    }
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
-    {
+        // Placement must happen here rather than in Loaded: Loaded can fire
+        // reentrantly from inside base.OnSourceInitialized (nested message
+        // pump during window creation), which would run it before _hwnd above
+        // is even assigned — silently no-opping every SetWindowPos call.
         if (_pendingRestoreRect is { } r)
         {
             SetWindowPos(_hwnd, IntPtr.Zero, r.X, r.Y, r.Width, r.Height,
