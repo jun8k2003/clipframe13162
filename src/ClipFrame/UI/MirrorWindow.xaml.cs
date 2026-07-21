@@ -30,6 +30,7 @@ public partial class MirrorWindow : Window
     private int _bmpHeight;
 
     private Rectangle? _pendingRestoreRect;
+    private bool _pendingRestoreCoverVisible;
 
     public MirrorWindow(RegionManager region, CaptureEngine capture)
     {
@@ -60,14 +61,17 @@ public partial class MirrorWindow : Window
         // is even assigned — silently no-opping every SetWindowPos call.
         if (_pendingRestoreRect is { } r)
         {
-            SetWindowPos(_hwnd, IntPtr.Zero, r.X, r.Y, r.Width, r.Height,
-                SWP_NOZORDER | SWP_NOACTIVATE);
+            NativeMethods.ApplyPhysicalRect(_hwnd, r);
         }
         else
         {
             AutoPlaceOutsideRegion(_region.CurrentRegion);
         }
         UpdateOverlapWarning();
+
+        // Needs the mirror's own rect (set above) to snap onto.
+        if (_pendingRestoreCoverVisible)
+            ShowCover();
     }
 
     /// <summary>
@@ -76,6 +80,12 @@ public partial class MirrorWindow : Window
     /// Must be called before the window is shown.
     /// </summary>
     public void RestoreWindowRect(Rectangle rect) => _pendingRestoreRect = rect;
+
+    /// <summary>Requests that the cover window be shown once loaded. Must be called before the window is shown.</summary>
+    public void RestoreCoverVisible(bool visible) => _pendingRestoreCoverVisible = visible;
+
+    /// <summary>True while the cover window is up, hiding the mirror content.</summary>
+    public bool IsCoverVisible => _cover?.IsVisible ?? false;
 
     /// <summary>Reads the window's current rect (physical px). False if the window has no handle yet.</summary>
     public bool TryGetPhysicalRect(out Rectangle rect)
@@ -214,6 +224,7 @@ public partial class MirrorWindow : Window
 
     private void ShowCover()
     {
+        bool firstShow = _cover == null;
         if (_cover == null)
         {
             // Owned window → the OS keeps the cover above the mirror; it also
@@ -224,13 +235,20 @@ public partial class MirrorWindow : Window
             _cover.HideRequested += () => _cover.Hide();
         }
 
-        // Place exactly over the mirror before showing.
-        _syncingRect = true;
-        _cover.Left = Left;
-        _cover.Top = Top;
-        _cover.Width = Width;
-        _cover.Height = Height;
-        _syncingRect = false;
+        // Place exactly over the mirror (physical px) before showing. WPF's
+        // Left/Top/Width/Height are DIP values in a per-monitor-DPI-virtualized
+        // coordinate space that gets inconsistent across monitors with
+        // different scaling, so the cover is kept in sync via native rects
+        // instead, same as the mirror's own placement.
+        if (TryGetPhysicalRect(out var mr))
+        {
+            _syncingRect = true;
+            if (firstShow)
+                _cover.RestoreWindowRect(mr); // applied once the cover's own hwnd exists
+            else
+                _cover.SetPhysicalRect(mr);
+            _syncingRect = false;
+        }
 
         _cover.Show();
     }
@@ -239,11 +257,9 @@ public partial class MirrorWindow : Window
     private void SyncMirrorToCover()
     {
         if (_cover == null || _syncingRect) return;
+        if (!_cover.TryGetPhysicalRect(out var cr)) return;
         _syncingRect = true;
-        Left = _cover.Left;
-        Top = _cover.Top;
-        Width = _cover.Width;
-        Height = _cover.Height;
+        NativeMethods.ApplyPhysicalRect(_hwnd, cr);
         _syncingRect = false;
     }
 
@@ -251,11 +267,9 @@ public partial class MirrorWindow : Window
     private void SyncCoverToMirror()
     {
         if (_cover == null || !_cover.IsVisible || _syncingRect) return;
+        if (!TryGetPhysicalRect(out var mr)) return;
         _syncingRect = true;
-        _cover.Left = Left;
-        _cover.Top = Top;
-        _cover.Width = Width;
-        _cover.Height = Height;
+        _cover.SetPhysicalRect(mr);
         _syncingRect = false;
     }
 

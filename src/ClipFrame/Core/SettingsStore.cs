@@ -27,6 +27,9 @@ public sealed class AppSettings
 
     /// <summary>Mirror window rectangle (physical px) at last exit.</summary>
     public RectInfo? LastMirrorWindow { get; set; }
+
+    /// <summary>Whether the mirror's cover window was shown at last exit.</summary>
+    public bool LastCoverVisible { get; set; }
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true)]

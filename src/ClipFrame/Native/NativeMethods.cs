@@ -213,6 +213,27 @@ internal static class NativeMethods
         return (hmon, new Rectangle(0, 0, 1920, 1080));
     }
 
+    /// <summary>
+    /// Moves+resizes a window to an exact physical-px rect. If this crosses a
+    /// DPI boundary (e.g. restoring onto a monitor with different scaling
+    /// than the one the window currently sits on), Windows fires
+    /// WM_DPICHANGED synchronously inside the SetWindowPos call and silently
+    /// rescales the size just requested — the first call can undershoot.
+    /// Re-issuing the same call once the window has settled on the new DPI
+    /// corrects it.
+    /// </summary>
+    public static void ApplyPhysicalRect(IntPtr hwnd, Rectangle target)
+    {
+        SetWindowPos(hwnd, IntPtr.Zero, target.X, target.Y, target.Width, target.Height,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+        GetWindowRect(hwnd, out RECT actual);
+        if (actual.Width != target.Width || actual.Height != target.Height)
+        {
+            SetWindowPos(hwnd, IntPtr.Zero, target.X, target.Y, target.Width, target.Height,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+
     // ---- Monitor enumeration (layout fingerprint for session-state restore) ----
 
     private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);

@@ -1,5 +1,7 @@
+using System.Drawing;
 using System.Windows;
 using System.Windows.Interop;
+using ClipFrame.Native;
 using static ClipFrame.Native.NativeMethods;
 
 namespace ClipFrame.UI;
@@ -16,6 +18,9 @@ public partial class CoverWindow : Window
     /// <summary>Raised when the user clicks the "remove cover" button.</summary>
     public event Action? HideRequested;
 
+    private IntPtr _hwnd;
+    private Rectangle? _pendingRestoreRect;
+
     public CoverWindow()
     {
         InitializeComponent();
@@ -25,14 +30,51 @@ public partial class CoverWindow : Window
     {
         base.OnSourceInitialized(e);
         var src = (HwndSource)PresentationSource.FromVisual(this)!;
+        _hwnd = src.Handle;
 
         // Keep the cover out of Alt+Tab (and share pickers) — sharing the
         // cover by mistake instead of the mirror must not happen.
-        IntPtr ex = GetWindowLongPtr(src.Handle, GWL_EXSTYLE);
-        SetWindowLongPtr(src.Handle, GWL_EXSTYLE,
+        IntPtr ex = GetWindowLongPtr(_hwnd, GWL_EXSTYLE);
+        SetWindowLongPtr(_hwnd, GWL_EXSTYLE,
             new IntPtr(ex.ToInt64() | WS_EX_TOOLWINDOW));
 
         src.AddHook(WndProc);
+
+        // Placement happens here (not Loaded) for the same reentrancy reason
+        // as MirrorWindow: Loaded can fire before _hwnd above is assigned.
+        if (_pendingRestoreRect is { } r)
+            NativeMethods.ApplyPhysicalRect(_hwnd, r);
+    }
+
+    /// <summary>
+    /// Requests that the window be placed at <paramref name="rect"/> (physical
+    /// px) once loaded. Must be called before the window is shown for the
+    /// first time; use <see cref="SetPhysicalRect"/> once it already has a handle.
+    /// </summary>
+    public void RestoreWindowRect(Rectangle rect) => _pendingRestoreRect = rect;
+
+    /// <summary>Moves+resizes the window to an exact physical-px rect right now.</summary>
+    public void SetPhysicalRect(Rectangle rect)
+    {
+        if (_hwnd == IntPtr.Zero) return;
+        NativeMethods.ApplyPhysicalRect(_hwnd, rect);
+    }
+
+    /// <summary>Reads the window's current rect (physical px). False if the window has no handle yet.</summary>
+    public bool TryGetPhysicalRect(out Rectangle rect)
+    {
+        if (_hwnd == IntPtr.Zero)
+        {
+            rect = default;
+            return false;
+        }
+        if (!GetWindowRect(_hwnd, out RECT wr))
+        {
+            rect = default;
+            return false;
+        }
+        rect = new Rectangle(wr.Left, wr.Top, wr.Width, wr.Height);
+        return true;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)

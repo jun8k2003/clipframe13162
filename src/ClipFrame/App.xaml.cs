@@ -31,12 +31,14 @@ public partial class App : Application
 
         var currentLayout = Native.NativeMethods.GetAllMonitors();
         System.Drawing.Rectangle? restoredMirrorRect = null;
+        bool restoreCoverVisible = false;
         if (SameLayout(settings.Current.LastMonitorLayout, currentLayout))
         {
             if (settings.Current.LastRegion is { } lr)
                 initial = new System.Drawing.Rectangle(lr.X, lr.Y, lr.Width, lr.Height);
             if (settings.Current.LastMirrorWindow is { } lm)
                 restoredMirrorRect = new System.Drawing.Rectangle(lm.X, lm.Y, lm.Width, lm.Height);
+            restoreCoverVisible = settings.Current.LastCoverVisible;
         }
 
         _region = new RegionManager(initial);
@@ -46,6 +48,8 @@ public partial class App : Application
         _mirror = new MirrorWindow(_region, _capture);
         if (restoredMirrorRect is { } rmr)
             _mirror.RestoreWindowRect(rmr);
+        if (restoreCoverVisible)
+            _mirror.RestoreCoverVisible(true);
         _overlay = new FrameOverlayWindow(_region, _capture, _mirror, settings);
 
         // Show mirror first so it can auto-place itself outside the region.
@@ -223,9 +227,10 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Captures the current region + mirror rect + monitor layout so the next
-    /// launch can restore them if the monitor layout hasn't changed. Called
-    /// from Closing (not OnExit) so window handles are still valid.
+    /// Captures the current region + mirror rect + cover visibility + monitor
+    /// layout so the next launch can restore them if the monitor layout
+    /// hasn't changed. Called from Closing (not OnExit) so window handles are
+    /// still valid.
     /// </summary>
     private void SaveSessionState(SettingsStore settings)
     {
@@ -237,6 +242,8 @@ public partial class App : Application
 
         if (_mirror != null && _mirror.TryGetPhysicalRect(out var mr))
             settings.Current.LastMirrorWindow = new RectInfo(mr.X, mr.Y, mr.Width, mr.Height);
+
+        settings.Current.LastCoverVisible = _mirror?.IsCoverVisible ?? false;
 
         settings.Current.LastMonitorLayout = Native.NativeMethods.GetAllMonitors()
             .Select(m => new RectInfo(m.X, m.Y, m.Width, m.Height))
