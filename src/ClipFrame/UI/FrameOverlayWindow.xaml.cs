@@ -33,6 +33,8 @@ public partial class FrameOverlayWindow : Window
     private double _aspectRatio = 16.0 / 9.0;
     private bool _paused;
     private bool _snapEnabled = true;
+    private bool _interactive;               // between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE
+    private Rectangle _lastAppliedRegion;    // last region explicitly requested via ApplyRegionToWindow
 
     private readonly PresetStore _presets = new();
 
@@ -96,6 +98,7 @@ public partial class FrameOverlayWindow : Window
     /// <summary>Positions the window around the region and cuts the interior hole.</summary>
     private void ApplyRegionToWindow(Rectangle region)
     {
+        _lastAppliedRegion = region;
         _scale = GetDpiForWindow(_hwnd) / 96.0;
         if (_scale <= 0) _scale = 1.0;
         _borderPx = (int)Math.Round(BorderDip * _scale);
@@ -199,6 +202,7 @@ public partial class FrameOverlayWindow : Window
                 break;
 
             case WM_ENTERSIZEMOVE:
+                _interactive = true;
                 _region.BeginChange();
                 var r0 = RegionFromWindow();
                 _aspectRatio = r0.Height > 0 ? (double)r0.Width / r0.Height : _aspectRatio;
@@ -228,6 +232,7 @@ public partial class FrameOverlayWindow : Window
             }
 
             case WM_EXITSIZEMOVE:
+                _interactive = false;
                 _region.Commit(RegionFromWindow());
                 break;
 
@@ -236,7 +241,16 @@ public partial class FrameOverlayWindow : Window
                 break;
 
             case 0x02E0: // WM_DPICHANGED
-                ApplyRegionToWindow(RegionFromWindow());
+                // Windows rescales the whole window rect to preserve apparent
+                // size across the DPI boundary. Deriving "the region" from that
+                // rect using the (still stale) pre-change border double-counts
+                // the scale factor on the border margin and inflates the
+                // region on every DPI crossing (spec bug: mixed-DPI restore
+                // grows the saved rect). Re-apply the region we actually asked
+                // for instead — it's untouched by whatever Windows did to the
+                // window rect. Mid-drag, keep following the live window rect
+                // since no explicit target exists yet.
+                ApplyRegionToWindow(_interactive ? RegionFromWindow() : _lastAppliedRegion);
                 break;
         }
         return IntPtr.Zero;
