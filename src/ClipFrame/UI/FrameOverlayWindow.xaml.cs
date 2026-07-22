@@ -35,6 +35,7 @@ public partial class FrameOverlayWindow : Window
     private bool _snapEnabled = true;
     private bool _interactive;               // between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE
     private Rectangle _lastAppliedRegion;    // last region explicitly requested via ApplyRegionToWindow
+    private bool _applyingRegion;            // true while ApplyRegionToWindow's own SetWindowPos is in flight
 
     private readonly PresetStore _presets = new();
 
@@ -95,10 +96,38 @@ public partial class FrameOverlayWindow : Window
 
     // ---- Geometry ----
 
-    /// <summary>Positions the window around the region and cuts the interior hole.</summary>
+    /// <summary>
+    /// Positions the window around the region and cuts the interior hole.
+    /// When this move crosses a DPI boundary (destination monitor has
+    /// different scaling than the one the window currently sits on), Windows
+    /// auto-rescales the cx/cy we pass to SetWindowPos to the ratio between
+    /// the old and new DPI once it finishes processing the call — the same
+    /// issue <see cref="NativeMethods.ApplyPhysicalRect"/> works around for
+    /// Mirror/Cover. Verify once the call has fully returned (i.e. the
+    /// window has settled on its final DPI) and reapply if it doesn't match;
+    /// by then there's no further boundary to cross, so the retry sticks.
+    /// </summary>
     private void ApplyRegionToWindow(Rectangle region)
     {
         _lastAppliedRegion = region;
+        _applyingRegion = true;
+        try
+        {
+            double scaleUsed = ApplyRegionCore(region);
+            double settledScale = GetDpiForWindow(_hwnd) / 96.0;
+            if (settledScale <= 0) settledScale = 1.0;
+            if (settledScale != scaleUsed)
+                ApplyRegionCore(region);
+        }
+        finally
+        {
+            _applyingRegion = false;
+        }
+    }
+
+    /// <summary>Single, unverified placement attempt. Returns the DPI scale it computed with.</summary>
+    private double ApplyRegionCore(Rectangle region)
+    {
         _scale = GetDpiForWindow(_hwnd) / 96.0;
         if (_scale <= 0) _scale = 1.0;
         _borderPx = (int)Math.Round(BorderDip * _scale);
@@ -113,6 +142,7 @@ public partial class FrameOverlayWindow : Window
 
         RecutAndLayout(winW, winH);
         UpdateBadge(region);
+        return _scale;
     }
 
     /// <summary>Rebuilds the window region (ring + tag) and lays out the tag.</summary>
@@ -241,19 +271,18 @@ public partial class FrameOverlayWindow : Window
                 break;
 
             case 0x02E0: // WM_DPICHANGED
-                // Windows rescales the whole window rect to preserve apparent
-                // size across the DPI boundary. Deriving "the region" from that
-                // rect via RegionFromWindow() would divide out the (still
-                // stale) pre-change border, double-counting the scale factor
-                // and inflating the region on every DPI crossing — including
-                // mid-drag, when the user drags the frame across two
-                // differently-scaled monitors. Reapply the region we already
-                // know is correct instead of trusting the mangled rect: the
-                // live-tracked region while dragging (kept current via
-                // ReportLive on every WM_MOVE/WM_SIZE), otherwise the last
-                // region explicitly requested (startup restore / preset apply
-                // — _region itself may not be updated yet at this point).
-                ApplyRegionToWindow(_interactive ? _region.CurrentRegion : _lastAppliedRegion);
+                // While ApplyRegionToWindow's own SetWindowPos is in flight,
+                // this fires reentrantly — but its own post-call verify/retry
+                // already handles that case, and reapplying here too would
+                // just get clobbered when the outer SetWindowPos resumes and
+                // finishes applying its (DPI-stale) size. Only handle DPI
+                // changes that happen outside of that: a live drag across two
+                // differently-scaled monitors (no explicit target exists yet,
+                // so follow the region as last tracked via ReportLive) or the
+                // OS DPI setting changing while idle (nothing else would
+                // recompute the border then).
+                if (!_applyingRegion)
+                    ApplyRegionToWindow(_interactive ? _region.CurrentRegion : _lastAppliedRegion);
                 break;
         }
         return IntPtr.Zero;
