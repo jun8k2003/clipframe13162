@@ -243,14 +243,17 @@ public partial class FrameOverlayWindow : Window
             case 0x02E0: // WM_DPICHANGED
                 // Windows rescales the whole window rect to preserve apparent
                 // size across the DPI boundary. Deriving "the region" from that
-                // rect using the (still stale) pre-change border double-counts
-                // the scale factor on the border margin and inflates the
-                // region on every DPI crossing (spec bug: mixed-DPI restore
-                // grows the saved rect). Re-apply the region we actually asked
-                // for instead — it's untouched by whatever Windows did to the
-                // window rect. Mid-drag, keep following the live window rect
-                // since no explicit target exists yet.
-                ApplyRegionToWindow(_interactive ? RegionFromWindow() : _lastAppliedRegion);
+                // rect via RegionFromWindow() would divide out the (still
+                // stale) pre-change border, double-counting the scale factor
+                // and inflating the region on every DPI crossing — including
+                // mid-drag, when the user drags the frame across two
+                // differently-scaled monitors. Reapply the region we already
+                // know is correct instead of trusting the mangled rect: the
+                // live-tracked region while dragging (kept current via
+                // ReportLive on every WM_MOVE/WM_SIZE), otherwise the last
+                // region explicitly requested (startup restore / preset apply
+                // — _region itself may not be updated yet at this point).
+                ApplyRegionToWindow(_interactive ? _region.CurrentRegion : _lastAppliedRegion);
                 break;
         }
         return IntPtr.Zero;
